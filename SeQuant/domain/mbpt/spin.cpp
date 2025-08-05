@@ -1191,16 +1191,6 @@ ExprPtr hash_filter_compact_set(
   }
   auto result = ex<Sum>(filtered);
 
-  // apply combined normalization and rescaling factor
-  rational combined_factor;
-  if (ext_idxs.size() <= 2) {
-    combined_factor = rational(1, factorial(ext_idxs.size()));
-  } else {
-    combined_factor = rational(
-        1, factorial(ext_idxs.size()) - 1);  // (1/fact_n) * (fact_n/(fact_n-1))
-  }
-  result = ex<Constant>(combined_factor) * result;
-
   return result;
 }
 
@@ -1229,16 +1219,17 @@ ExprPtr closed_shell_CC_spintrace_compact_set(ExprPtr const& expr) {
         st_expr;
   }
 
-  // need enns without rescaling factor? reverse the rescaling factor happened
-  // in hash filter fn rational reverse_rescaling_facotr; if (ext_idxs.size() >
-  // 2) {
-  //     reverse_rescaling_facotr = rational(factorial(ext_idxs.size()) - 1,
-  //     factorial(ext_idxs.size()));
-  // }
-  // st_expr = ex<Constant>(reverse_rescaling_facotr) * st_expr;
+  // apply combined normalization and rescaling factor
+  rational combined_factor;
+  if (ext_idxs.size() <= 2) {
+    combined_factor = rational(1, factorial(ext_idxs.size()));
+  } else {
+    combined_factor = rational(
+        1, factorial(ext_idxs.size()) - 1);  // (1/fact_n) * (fact_n/(fact_n-1))
+  }
+  st_expr = ex<Constant>(combined_factor) * st_expr;
 
   simplify(st_expr);
-
   std::wcout << "final eqns after symm: "
              << sequant::to_latex_align(
                     sequant::ex<sequant::Sum>(
