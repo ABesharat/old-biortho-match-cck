@@ -915,10 +915,65 @@ ExprPtr S_maps(const ExprPtr& expr) {
   return result;
 }
 
+ExprPtr expand_S_product(const Product& product) {
+  Tensor S_tensor;
+  bool found_S = false;
+
+  for (auto&& factor : product.factors()) {
+    if (factor->is<Tensor>() && factor->as<Tensor>().label() == L"S") {
+      S_tensor = factor->as<Tensor>();
+      found_S = true;
+      break;
+    }
+  }
+  if (!found_S) return std::make_shared<Product>(product);
+
+  // generate all permutation maps from the S operator
+  auto replacement_maps = S_replacement_maps(S_tensor);
+
+  auto result = std::make_shared<Sum>();
+
+  for (auto&& replacement_map : replacement_maps) {
+    Product new_product{};
+    new_product.scale(product.scalar());
+
+    // apply replacement to all non-S tensors
+    auto temp_product = remove_tensor(product, L"S");
+    for (auto&& term : *temp_product) {
+      if (term->is<Tensor>()) {
+        auto new_tensor = term->as<Tensor>();
+        new_tensor.transform_indices(replacement_map);
+        new_tensor.reset_tags();
+        new_product.append(1, ex<Tensor>(new_tensor));
+      } else {
+        new_product.append(1, term->clone());
+      }
+    }
+    result->append(ex<Product>(new_product));
+  }
+
+  return result;
+}
+
+ExprPtr expand_S_to_full(const ExprPtr& expr) {
+  if (!has_tensor(expr, L"S")) return expr;
+
+  if (expr->is<Product>()) {
+    return expand_S_product(expr->as<Product>());
+  } else if (expr->is<Sum>()) {
+    auto result = std::make_shared<Sum>();
+    for (auto&& term : *expr) {
+      result->append(expand_S_to_full(term));
+    }
+    return result;
+  }
+  return expr;
+}
+
 ExprPtr closed_shell_spintrace(
     const ExprPtr& expression,
     const container::svector<container::svector<Index>>& ext_index_groups,
-    bool is_compact_set) {
+    bool direct_full_expansion) {
   // Symmetrize and expression
   // Partially expand the antisymmetrizer and write it in terms of S operator.
   // See symmetrize_expr(expr) function for implementation details. We want an
@@ -927,20 +982,21 @@ ExprPtr closed_shell_spintrace(
   // non-symmetric.
   // adding another option to fully expand the antisymmetrizer (for caompact set
   // of epns)
-  auto partially_or_fully_expand = [&is_compact_set](const ExprPtr& expr) {
-    auto temp = expr;
-    if (has_tensor(temp, L"A")) {
-      if (is_compact_set) {
-        temp = expand_A_op(temp);
-      } else {
-        temp = symmetrize_expr(temp);
-        // temp = expand_A_op(temp);
-      }
-    }
-    temp = expand_antisymm(temp);
-    rapid_simplify(temp);
-    return temp;
-  };
+  auto partially_or_fully_expand =
+      [&direct_full_expansion](const ExprPtr& expr) {
+        auto temp = expr;
+        if (has_tensor(temp, L"A")) {
+          if (direct_full_expansion) {
+            temp = expand_A_op(temp);
+          } else {
+            temp = symmetrize_expr(temp);
+            // temp = expand_A_op(temp);
+          }
+        }
+        temp = expand_antisymm(temp);
+        rapid_simplify(temp);
+        return temp;
+      };
   auto expr = partially_or_fully_expand(expression);
 
   // Index tags are cleaned prior to calling the fast canonicalizer
@@ -1071,19 +1127,81 @@ ExprPtr closed_shell_CC_spintrace(ExprPtr const& expr) {
         ex<Tensor>(Tensor{L"S", bra(std::move(bixs)), ket(std::move(kixs))}) *
         st_expr;
   }
+
   simplify(st_expr);
   return st_expr;
 }
 
-container::svector<ResultExpr> closed_shell_spintrace(const ResultExpr& expr,
-                                                      bool is_compact_set) {
+container::svector<ResultExpr> closed_shell_spintrace(
+    const ResultExpr& expr, bool direct_full_expansion) {
   using TraceFunction =
       ExprPtr (*)(const ExprPtr&,
                   const container::svector<container::svector<Index>>&, bool);
 
   return detail::wrap_trace<container::svector<ResultExpr>>(
       expr, static_cast<TraceFunction>(&closed_shell_spintrace),
-      is_compact_set);
+      direct_full_expansion);
+}
+
+ExprPtr hash_filter_compact_set(
+    const ExprPtr& expr,
+    const container::svector<container::svector<Index>>& ext_idxs) {
+  if (!expr->is<Sum>()) return expr;
+
+  if (ext_idxs.size() <= 2) return expr;  // always skip R1 and R2
+
+  // hash filtering logic for R > 2
+  container::map<std::size_t, container::vector<ExprPtr>> largest_coeff_terms;
+
+  for (const auto& term : *expr) {
+    if (!term->is<Product>()) continue;
+
+    auto product = term->as<Product>();
+    auto scalar = product.scalar();
+
+    sequant::TensorNetworkV2 tn(product);
+    auto hash =
+        tn.canonicalize_slots(TensorCanonicalizer::cardinal_tensor_labels())
+            .hash_value();
+
+    auto it = largest_coeff_terms.find(hash);
+    if (it == largest_coeff_terms.end()) {
+      largest_coeff_terms[hash] = {term->clone()};
+    } else {
+      if (!it->second.empty()) {
+        auto existing_scalar = it->second[0]->as<Product>().scalar();
+        auto existing_abs = abs(existing_scalar);
+        auto current_abs = abs(scalar);
+
+        if (current_abs > existing_abs) {
+          it->second.clear();
+          it->second.push_back(term->clone());
+        } else if (current_abs == existing_abs) {
+          it->second.push_back(term->clone());
+        }
+      }
+    }
+  }
+
+  Sum filtered;
+  for (const auto& [_, terms] : largest_coeff_terms) {
+    for (const auto& t : terms) {
+      filtered.append(t);
+    }
+  }
+  auto result = ex<Sum>(filtered);
+
+  // apply combined normalization and rescaling factor
+  rational combined_factor;
+  if (ext_idxs.size() <= 2) {
+    combined_factor = rational(1, factorial(ext_idxs.size()));
+  } else {
+    combined_factor = rational(
+        1, factorial(ext_idxs.size()) - 1);  // (1/fact_n) * (fact_n/(fact_n-1))
+  }
+  result = ex<Constant>(combined_factor) * result;
+
+  return result;
 }
 
 ExprPtr closed_shell_CC_spintrace_compact_set(ExprPtr const& expr) {
@@ -1091,117 +1209,44 @@ ExprPtr closed_shell_CC_spintrace_compact_set(ExprPtr const& expr) {
   using ranges::views::transform;
 
   auto const ext_idxs = external_indices(expr);
-  auto st_expr = closed_shell_spintrace(expr, ext_idxs, true);
+  auto st_expr = closed_shell_spintrace(expr, ext_idxs, false);
+  st_expr = expand_S_to_full(st_expr);
   canonicalize(st_expr);
 
-  std::wcout << "Number of terms before biorthogonal transformation: "
-             << st_expr.size() << std::endl;
   if (!ext_idxs.empty()) {
     st_expr = biorthogonal_transform(st_expr, ext_idxs);
   }
 
-  bool is_r1_or_r2 = false;
-  if (ext_idxs.size() <= 2) {
-    is_r1_or_r2 = true;
+  // apply hash filtering to get unique set of terms (including all large
+  // coefficients of each unique term)
+  st_expr = hash_filter_compact_set(st_expr, ext_idxs);
 
-    // using external index to have access to different r
-    for (const auto& v : ext_idxs) {
-      for (const auto& idx : v) {
-      }
-    }
-  }
-  // apply hash-based filtering for r3 and higher orders (skip r1 and r2)
-  ExprPtr result_expr;
-  if (!is_r1_or_r2) {
-    std::wcout << "Applying hash-based filtering for r3 or higher..."
-               << std::endl;
-
-    // map, modified to store same terms with multiple larg coeffs.
-    container::map<std::size_t, container::vector<ExprPtr>> largest_coeff_terms;
-
-    for (const auto& term : st_expr) {
-      if (!term.is<Product>()) continue;  // skip non-Product terms
-      auto pdt = term.as<Product>();
-      auto scalar_i = pdt.scalar();
-      auto tn = sequant::TensorNetworkV2(pdt);
-      auto res_hashvalue =
-          tn.canonicalize_slots(TensorCanonicalizer::cardinal_tensor_labels())
-              .hash_value();
-
-      // if we've seen this hash before
-      auto it = largest_coeff_terms.find(res_hashvalue);
-      if (it == largest_coeff_terms.end()) {
-        // 1st time seeing this hash, add the term to a new vector
-        largest_coeff_terms.insert({res_hashvalue, {term.clone()}});
-      } else {
-        // we've seen this hash before
-        if (!it->second.empty()) {
-          auto existing_scalar = it->second[0]->as<Product>().scalar();
-          auto existing_abs = abs(existing_scalar);
-          // auto current_abs_sq = scalar_i.real() * scalar_i.real();
-          auto current_abs = abs(scalar_i);
-
-          if (current_abs > existing_abs) {
-            // if new term has larger coefficient, replace the vector with just
-            // this term
-            it->second.clear();
-            it->second.push_back(term.clone());
-          } else if (current_abs == existing_abs) {
-            // coeffs are equal, add to the vector. To have multiple large
-            // coeffs
-            it->second.push_back(term.clone());
-          }
-          // if current coefficient is smaller, do nothing
-        }
-      }
-    }
-
-    Sum filtered_terms;
-    for (const auto& pair : largest_coeff_terms) {
-      for (const auto& term : pair.second) {
-        filtered_terms.append(term);
-      }
-    }
-    result_expr = ex<Sum>(filtered_terms);
-
-  } else {
-    // for r1 and r2, just return the simplified expression without hash-based
-    // filtering.
-    result_expr = st_expr;
-    std::wcout << "Skipping hash-based filtering for r1 and r2" << std::endl;
-  }
-
-  // now I need S, becaue I picked multiple large coefficients of each set, so
-  // add S tensor just once at the end
   auto bixs = ext_idxs | transform([](auto&& vec) { return vec[1]; });
   auto kixs = ext_idxs | transform([](auto&& vec) { return vec[0]; });
-
   if (!bixs.empty() || !kixs.empty()) {
-    result_expr =
+    st_expr =
         ex<Tensor>(Tensor{L"S", bra(std::move(bixs)), ket(std::move(kixs))}) *
-        result_expr;
+        st_expr;
   }
 
-  rational combined_factor;
-  if (ext_idxs.size() <= 2) {
-    combined_factor = rational(1, factorial(ext_idxs.size()));
-  } else {
-    auto fact_n = factorial(ext_idxs.size());
-    combined_factor =
-        rational(1, fact_n - 1);  // this is (1/fact_n) * (fact_n/(fact_n-1))
-  }
-  result_expr = ex<Constant>(combined_factor) * result_expr;
+  // need enns without rescaling factor? reverse the rescaling factor happened
+  // in hash filter fn rational reverse_rescaling_facotr; if (ext_idxs.size() >
+  // 2) {
+  //     reverse_rescaling_facotr = rational(factorial(ext_idxs.size()) - 1,
+  //     factorial(ext_idxs.size()));
+  // }
+  // st_expr = ex<Constant>(reverse_rescaling_facotr) * st_expr;
 
-  // result_expr = remove_tensor(result_expr, L"S"); // uncomment this if you
-  // want to see eqns without S in SeQuant
+  simplify(st_expr);
 
-  simplify(result_expr);
+  std::wcout << "final eqns after symm: "
+             << sequant::to_latex_align(
+                    sequant::ex<sequant::Sum>(
+                        sequant::opt::reorder(st_expr->as<sequant::Sum>())),
+                    0, 4)
+             << std::endl;
 
-  // std::wcout << "final eqns after symm: " <<
-  // sequant::to_latex_align(sequant::ex<sequant::Sum>(sequant::opt::reorder(result_expr->as<sequant::Sum>())),
-  // 0, 4) << std::endl;
-
-  return result_expr;
+  return st_expr;
 }
 
 ExprPtr closed_shell_CC_spintrace_rigorous(ExprPtr const& expr) {

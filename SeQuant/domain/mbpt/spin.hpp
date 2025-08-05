@@ -227,6 +227,12 @@ container::svector<container::map<Index, Index>> S_replacement_maps(
 
 /// @brief Expand S operator
 ExprPtr S_maps(const ExprPtr& expr);
+ExprPtr expand_S_product(const Product& product);
+ExprPtr expand_S_to_full(const ExprPtr& expr);
+
+ExprPtr hash_filter_compact_set(
+    const ExprPtr& expr,
+    const container::svector<container::svector<Index>>& ext_idxs);
 
 /// @brief Transforms an expression from spin orbital to spatial orbitals
 /// @details This functions is designed for integrating spin out of expression
@@ -241,10 +247,10 @@ ExprPtr S_maps(const ExprPtr& expr);
 ExprPtr closed_shell_spintrace(
     const ExprPtr& expr,
     const container::svector<container::svector<Index>>& ext_index_groups = {},
-    bool is_compact_set = false);
+    bool direct_full_expansion = false);
 
 container::svector<ResultExpr> closed_shell_spintrace(
-    const ResultExpr& expr, bool is_compact_set = false);
+    const ResultExpr& expr, bool direct_full_expansion = false);
 
 /// @brief Transforms Coupled cluster from spin orbital to spatial orbitals
 /// @details The external indices are deduced from Antisymmetrization operator
