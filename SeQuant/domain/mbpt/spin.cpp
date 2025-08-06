@@ -970,6 +970,23 @@ ExprPtr expand_S_to_full(const ExprPtr& expr) {
   return expr;
 }
 
+container::svector<ResultExpr> expand_S_to_full(const ResultExpr& expr) {
+  ResultExpr result = expr.clone();
+  result.expression() = expand_S_to_full(result.expression());
+  return {std::move(result)};
+}
+
+container::svector<ResultExpr> expand_S_to_full(
+    const container::svector<ResultExpr>& exprs) {
+  container::svector<ResultExpr> results;
+  for (const auto& expr : exprs) {
+    auto expanded =
+        expand_S_to_full(expr);  // Calls the single ResultExpr overload
+    results.insert(results.end(), expanded.begin(), expanded.end());
+  }
+  return results;
+}
+
 ExprPtr closed_shell_spintrace(
     const ExprPtr& expression,
     const container::svector<container::svector<Index>>& ext_index_groups,

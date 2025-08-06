@@ -229,6 +229,9 @@ container::svector<container::map<Index, Index>> S_replacement_maps(
 ExprPtr S_maps(const ExprPtr& expr);
 ExprPtr expand_S_product(const Product& product);
 ExprPtr expand_S_to_full(const ExprPtr& expr);
+container::svector<ResultExpr> expand_S_to_full(const ResultExpr& expr);
+container::svector<ResultExpr> expand_S_to_full(
+    const container::svector<ResultExpr>& exprs);
 
 ExprPtr hash_filter_compact_set(
     const ExprPtr& expr,
