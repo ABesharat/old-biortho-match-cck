@@ -227,10 +227,9 @@ container::svector<container::map<Index, Index>> S_replacement_maps(
 
 /// @brief Expand S operator
 ExprPtr S_maps(const ExprPtr& expr);
-ExprPtr expand_S_product(const Product& product);
-ExprPtr expand_S_to_full(const ExprPtr& expr);
-container::svector<ResultExpr> expand_S_to_full(const ResultExpr& expr);
-container::svector<ResultExpr> expand_S_to_full(
+// overloading for a practice (check expansion in test_spin)
+container::svector<ResultExpr> S_maps(const ResultExpr& expr);
+container::svector<ResultExpr> S_maps(
     const container::svector<ResultExpr>& exprs);
 
 ExprPtr hash_filter_compact_set(
