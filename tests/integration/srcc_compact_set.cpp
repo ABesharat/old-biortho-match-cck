@@ -175,7 +175,8 @@ class compute_cceqvec {
           eqvec[R] = biorthogonal_transform(eqvec[R], ext_idxs);
           // apply hash fiter to get compact_set eqns
           eqvec[R] = hash_filter_compact_set(eqvec[R], ext_idxs);
-
+          std::wcout << "number of terms after hash filter: " << eqvec[R].size()
+                     << std::endl;
           // restore the particle symmetrizer
           auto bixs = ext_idxs | ranges::views::transform(
                                      [](auto&& vec) { return vec[0]; });
@@ -183,7 +184,15 @@ class compute_cceqvec {
                                      [](auto&& vec) { return vec[1]; });
           // N.B. external_indices(expr) confuses bra and ket
           eqvec[R] = ex<Tensor>(Tensor{L"S", bra(kixs), ket(bixs)}) * eqvec[R];
-
+          rational combined_factor;
+          if (ext_idxs.size() <= 2) {
+            combined_factor = rational(1, factorial(ext_idxs.size()));
+          } else {
+            combined_factor =
+                rational(1, factorial(ext_idxs.size()) -
+                                1);  // (1/fact_n) * (fact_n/(fact_n-1))
+          }
+          eqvec[R] = ex<Constant>(combined_factor) * eqvec[R];
           eqvec[R] = expand(eqvec[R]);
           simplify(eqvec[R]);
 

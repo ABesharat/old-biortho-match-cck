@@ -313,55 +313,108 @@ TEST_CASE("spin", "[spin]") {
   SECTION("Tensor times variable") {
     ResultExpr expr = parse_result_expr(
         L"R2{a1,a2;i1,i2}:A = 1/4 A{i1,i2;a1,a2}:A INTkx{a1,a2;i1,i2}:A H");
-    auto results = closed_shell_spintrace(expr);
+    auto results = spintrace(expr);
     REQUIRE_THAT(
         results.at(0),
-        EquivalentTo(L"R2{a_1,a_2;i_1,i_2}:N = -1 H * S{i_1,i_2;a_1,a_2}:N "
-                     L"* INTkx{a_1,a_2;i_2,i_1}:N + 2 H * "
-                     L"S{i_1,i_2;a_1,a_2}:N * INTkx{a_1,a_2;i_1,i_2}:N"));
-  }
+        // not this
+        // EquivalentTo(L"R2{a_1,a_2;i_1,i_2}:N = -1 H * S{i_1,i_2;a_1,a_2}:N "
+        //              L"* INTkx{a_1,a_2;i_2,i_1}:N + 2 H * "
+        //              L"S{i_1,i_2;a_1,a_2}:N * INTkx{a_1,a_2;i_1,i_2}:N"));
 
-  SECTION("Tensor times variable direct full expansion") {
-    ResultExpr expr = parse_result_expr(
-        L"R2{a1,a2;i1,i2}:A = 1/4 A{i1,i2;a1,a2}:A INTkx{a1,a2;i1,i2}:A H");
-    auto results = closed_shell_spintrace(expr, true);
-    REQUIRE_THAT(
-        results.at(0),  // direct answer second
-        // EquivalentTo(L"R2{a_1, a_2;i_1, i_2;} = -1 H *
-        // INTkx{a_1,a_2;i_2,i_1}:N-C-S - 1 H * INTkx{a_2,a_1;i_1,i_2}:N-C-S + 2
-        // H * INTkx{a_1,a_2;i_1,i_2}:N-C-S + 2 H *
-        // INTkx{a_2,a_1;i_2,i_1}:N-C-S"));
         EquivalentTo(
             L"R2{a_1,a_2;i_1,i_2}:N = 4 H * INTkx{a_1,a_2;i_1,i_2}:N-C-S - 2 H "
             L"* INTkx{a_1,a_2;i_2,i_1}:N-C-S"));
   }
 
-  // SECTION("Tensor times variable full expansion") {
-  //   ResultExpr expr = parse_result_expr(
-  //       L"R2{a1,a2;i1,i2}:A = 1/4 A{i1,i2;a1,a2}:A INTkx{a1,a2;i1,i2}:A H");
-  //   auto results = closed_shell_spintrace(expr);
-  //   // results =
-  //   //     S_maps(results);  // Now this works! Calls the vector overload
-  //
-  //   for (auto& result : results) {
-  //     auto expanded = S_maps(result);
-  //     result = expanded[0];  // Since S_maps returns a vector with
-  //     // one element
-  //   }
-  //   REQUIRE_THAT(
-  //       results.at(0),  // direct answer: first
-  //       // EquivalentTo(
-  //       //     L"R2{a_1, a_2;i_1, i_2;} = -1 H * INTkx{a_1,a_2;i_2,i_1}:N-C-S
-  //       - 1 "
-  //       //     L"H * INTkx{a_2,a_1;i_1,i_2}:N-C-S + 2 H * "
-  //       //     L"INTkx{a_1,a_2;i_1,i_2}:N-C-S + 2 H * "
-  //       //     L"INTkx{a_2,a_1;i_2,i_1}:N-C-S"));
-  //
-  //       EquivalentTo(L"R2{a_1,a_2;i_1,i_2}:N = 4 H *"
-  //       "INTkx{a_1,a_2;i_1,i_2}:N-C-S - 2 H *
-  //       INTkx{a_1,a_2;i_2,i_1}:N-C-S"));
-  //
-  // }
+  SECTION("Tensor times variable direct_full_expansion") {
+    ResultExpr expr = parse_result_expr(
+        // L"R2{a1,a2;i1,i2}:A = 1/4 A{i1,i2;a1,a2}:A INTkx{a1,a2;i1,i2}:A H");
+        L"R2{a1,a2;i1,i2}:A = 1/4 A{i1,i2;a1,a2}:A INTkx{a1,a2;i1,i2}:A H");
+    auto results = closed_shell_spintrace(expr, true);
+    REQUIRE_THAT(
+        results.at(0),
+        // EquivalentTo(L"R2{a_1, a_2;i_1, i_2;} = -1 H *
+        // INTkx{a_1,a_2;i_2,i_1}:N-C-S - 1 H * INTkx{a_2,a_1;i_1,i_2}:N-C-S + 2
+        // H * INTkx{a_1,a_2;i_1,i_2}:N-C-S + 2 H *
+        // INTkx{a_2,a_1;i_2,i_1}:N-C-S"));
+        EquivalentTo(  // canonicalized
+            L"R2{a_1,a_2;i_1,i_2}:N = 4 H * INTkx{a_1,a_2;i_1,i_2}:N-C-S - 2 H "
+            L"* INTkx{a_1,a_2;i_2,i_1}:N-C-S"));
+  }
+
+  SECTION("Tensor times variable partial-then-full-expansion") {
+    ResultExpr expr = parse_result_expr(
+        L"R2{a1,a2;i1,i2}:A = 1/4 A{i1,i2;a1,a2}:A INTkx{a1,a2;i1,i2}:A H");
+    auto results = closed_shell_spintrace(expr);
+    results = S_maps(results);
+    // std::wcout << L"\nAfter S_maps expansion:\n";
+    REQUIRE_THAT(
+        results.at(0),
+        // EquivalentTo(
+        //     L"R2{a_1, a_2;i_1, i_2}:N = -1 H * INTkx{a_1,a_2;i_2,i_1}:N-C-S
+        //     -" L"H * INTkx{a_2,a_1;i_1,i_2}:N-C-S + 2 H * "
+        //     L"INTkx{a_1,a_2;i_1,i_2}:N-C-S + 2 H * "
+        //     L"INTkx{a_2,a_1;i_2,i_1}:N-C-S"));
+        EquivalentTo(L"R2{a_1,a_2;i_1,i_2}:N = 4 H *"
+                     L"INTkx{a_1,a_2;i_1,i_2}:N-C-S - 2 H *"
+                     L"INTkx{a_1,a_2;i_2,i_1}:N-C-S"));
+  }
+
+  // ##################
+  SECTION("my practice") {
+    // 2-body
+    {
+      auto input = ex<Constant>(rational{1, 4}) *
+                   ex<Tensor>(L"t", bra{L"i_1", L"i_2"}, ket{L"a_1", L"a_2"},
+                              Symmetry::antisymm);
+      auto result = expand_A_op(input);
+      REQUIRE_THAT(result, EquivalentTo("1/4 t{i1,i2;a1,a2}:A"));
+
+      input = ex<Constant>(rational{1, 4}) *
+              ex<Tensor>(L"A", bra{L"a_1", L"a_2"}, ket{L"i_1", L"i_2"},
+                         Symmetry::antisymm) *
+              ex<Tensor>(L"t", bra{L"i_1", L"i_2"}, ket{L"a_1", L"a_2"},
+                         Symmetry::antisymm);
+      result = expand_A_op(input);
+      // result = symmetrize_expr(input);
+      REQUIRE_THAT(result, SimplifiesTo("1/4 t{i1,i2;a1,a2}:A "
+                                        "- 1/4 t{i1,i2;a2,a1}:A "
+                                        "- 1/4 t{i2,i1;a1,a2}:A "
+                                        "+ 1/4 t{i2,i1;a2,a1}:A"));
+      /////####@@@@
+      input = ex<Constant>(rational{1, 4}) *
+              ex<Tensor>(L"A", bra{L"i_1", L"i_2"}, ket{L"a_1", L"a_2"},
+                         Symmetry::antisymm) *
+              ex<Tensor>(L"t", bra{L"a_1", L"a_2"}, ket{L"i_1", L"i_2"},
+                         Symmetry::antisymm);
+      // result = expand_A_op(input);
+      result = symmetrize_expr(input);
+      result = S_maps(result);
+
+      // for A_expand
+      // REQUIRE_THAT(result, SimplifiesTo("1/4 t{a_1,a_2;i_1,i_2}:A-C-S - 1/4
+      // t{a_1,a_2;i_2,i_1}:A-C-S - 1/4 t{a_2,a_1;i_1,i_2}:A-C-S + 1/4
+      // t{a_2,a_1;i_2,i_1}:A-C-S"));
+
+      // for symmetrize:
+      // REQUIRE_THAT(result, SimplifiesTo("1/4 S{i1,i2;a1,a2}:N-C-S *
+      // t{a1,a2;i1,i2}:A-C-S - 1/4 S{i1,i2;a1,a2}:N-C-S *
+      // t{a1,a2;i2,i1}:A-C-S"));
+      // symmetrize+S_map
+      REQUIRE_THAT(
+          result,
+          SimplifiesTo(
+              "1/4 t{a_1,a_2;i_1,i_2}:A-C-S + 1/4 t{a_2,a_1;i_2,i_1}:A-C-S - "
+              "1/4 t{a_1,a_2;i_2,i_1}:A-C-S - 1/4 t{a_2,a_1;i_1,i_2}:A-C-S"));
+      // for spintrace
+      // REQUIRE_THAT(result, EquivalentTo("1/4 t{a_1,a_2;i_1,i_2}:A-C-S + 1/4
+      // t{a_2,a_1;i_2,i_1}:A-C-S - 1/4 t{a_1,a_2;i_2,i_1}:A-C-S - 1/4
+      // t{a_2,a_1;i_1,i_2}:A-C-S"));
+
+      // ###@@@@@@
+    }
+  }
+  //$$$$$$$$$$$$$$$$
 
   SECTION("Sum") {
     // f * t1 + 1/2 * g * t1 * t1 + 1/4 * g * t2

@@ -227,10 +227,8 @@ container::svector<container::map<Index, Index>> S_replacement_maps(
 
 /// @brief Expand S operator
 ExprPtr S_maps(const ExprPtr& expr);
-// overloading for a practice (check expansion in test_spin)
-container::svector<ResultExpr> S_maps(const ResultExpr& expr);
 container::svector<ResultExpr> S_maps(
-    const container::svector<ResultExpr>& exprs);
+    const container::svector<ResultExpr>& results);
 
 ExprPtr hash_filter_compact_set(
     const ExprPtr& expr,
