@@ -2,91 +2,94 @@
 #define SEQUANT_CORE_UTILITY_CS_CLEANUP_HPP
 
 #include <SeQuant/core/rational.hpp>
+#include <SeQuant/core/tensor.hpp>
 #include <algorithm>
 #include <iostream>
 #include <numeric>
+#include <range/v3/range/conversion.hpp>
+#include <range/v3/view.hpp>
 #include <string>
 #include <vector>
 
 namespace sequant {
 
 template <typename TArray>
-TArray cleanup_tensor(const TArray& tensor, const std::string& tensor_name) {
-  size_t total_rank = tensor.trange().rank();
+TArray cleanup_tensor(const TArray& array, const sequant::Tensor& tensor) {
+  size_t total_rank = array.trange().rank();
+
+  // Get bra rank and ket rank from the tensor object
+  auto bra_rank = tensor.bra_rank();
+  auto ket_rank = tensor.ket_rank();
+
+  // Early return for low-rank tensors
   if (total_rank <= 4) {
-    std::cout << tensor_name << " has rank <= 2 or 4, no cleanup needed."
-              << std::endl;
-    return tensor;
+    return array;
   }
 
-  size_t occ_rank = total_rank / 2;  // virtual indices = occ_rank
+  // Create index vectors for bra and ket
+  auto bra_idx = ranges::views::iota(size_t{0}, bra_rank) | ranges::to_vector;
+  auto ket_idx = ranges::views::iota(bra_rank, total_rank) | ranges::to_vector;
 
-  std::cout << "\n=== Starting " << tensor_name << " Cleanup (permute last "
-            << occ_rank << " indices) ===" << std::endl;
-  auto norm_before = TA::norm2(tensor);
-  std::cout << "Initial " << tensor_name << " norm: " << norm_before
-            << std::endl;
+  // Helper function to convert ordinals to annotation string
+  auto ords_to_annot = [](auto const& ords) {
+    using ranges::views::intersperse;
+    using ranges::views::join;
+    using ranges::views::transform;
+    auto to_str = [](auto x) { return std::to_string(x); };
+    return ords | transform(to_str) | intersperse(std::string{","}) | join |
+           ranges::to<std::string>;
+  };
 
-  TArray cleaned(tensor.world(), tensor.trange(), tensor.shape());
+  // Create the left annotation (original ordering)
+  const auto l_annot =
+      ords_to_annot(ranges::views::iota(size_t{0}, total_rank));
+
+  // Initialize cleaned tensor
+  TArray cleaned(array.world(), array.trange(), array.shape());
   cleaned.fill(0.0);
 
-  std::string virt_indices_str;
-  std::string occ_indices_str;
-  virt_indices_str.reserve(5 * occ_rank);
-  occ_indices_str.reserve(5 * occ_rank);
-  for (size_t i = 1; i <= occ_rank; ++i) {
-    virt_indices_str += "a_" + std::to_string(i);
-    occ_indices_str += "i_" + std::to_string(i);
-    if (i < occ_rank) {
-      virt_indices_str += ",";
-      occ_indices_str += ",";
-    }
-  }
-  std::string left_index_str =
-      virt_indices_str + "," + occ_indices_str;  // the main tensor
-
-  // double factorial = 1.0;
-  // for (size_t i = 1; i <= occ_rank; ++i) {
-  //     factorial *= static_cast<double>(i);
-  // }
-  // double inv_factor = 1.0 / factorial;
-
-  rational inv_factor = rational(1, factorial(occ_rank));
-  double inv_factor_d = static_cast<double>(inv_factor);
-
-  // create a vector to generate permutations of [1, 2, ..., occ_rank]
-  std::vector<size_t> perm_indices(occ_rank);  // occ_rank is the size
-  std::iota(perm_indices.begin(), perm_indices.end(),
-            1);  // fill with 1..occ_ra
-
-  TArray perm_sum(tensor.world(), tensor.trange(), tensor.shape());
+  // Initialize permutation sum tensor
+  TArray perm_sum(array.world(), array.trange(), array.shape());
   perm_sum.fill(0.0);
 
-  // loop over all possible permutations of occupied index labels
+  // We need to symmetrize over the ket indices
+  // For conventional CC, ket indices are the occupied indices
+
+  // Calculate the symmetrization factor
+  rational inv_factor = rational(1, factorial(ket_rank));
+  double inv_factor_d = static_cast<double>(inv_factor);
+
+  // Generate all permutations of ket indices
+  std::vector<size_t> ket_perm = ket_idx;
+
   do {
-    std::string permuted_occ_str;
-    permuted_occ_str.reserve(5 * occ_rank);
-    for (size_t j = 0; j < occ_rank; ++j) {
-      permuted_occ_str += "i_" + std::to_string(perm_indices[j]);
-      if (j < occ_rank - 1) {
-        permuted_occ_str += ",";
-      }
-    }
-    std::string perm_indices_str = virt_indices_str + "," + permuted_occ_str;
-    perm_sum(left_index_str) += tensor(perm_indices_str);
+    // Construct the permuted annotation
+    // Combine bra indices (unchanged) with permuted ket indices
+    std::vector<size_t> full_perm;
+    full_perm.reserve(total_rank);
 
-  } while (std::next_permutation(perm_indices.begin(), perm_indices.end()));
+    // Add bra indices (unchanged)
+    full_perm.insert(full_perm.end(), bra_idx.begin(), bra_idx.end());
 
-  perm_sum(left_index_str) = perm_sum(left_index_str) * inv_factor_d;
+    // Add permuted ket indices
+    full_perm.insert(full_perm.end(), ket_perm.begin(), ket_perm.end());
 
-  // cleaned = tensor - perm_sum(including identity)
-  cleaned(left_index_str) = tensor(left_index_str) - perm_sum(left_index_str);
+    // Convert to annotation string
+    std::string perm_annot = ords_to_annot(full_perm);
 
-  auto norm_after = TA::norm2(cleaned);
-  std::cout << "=== " << tensor_name << " Cleanup Complete ===" << std::endl;
-  std::cout << "Norm change: " << (norm_after - norm_before) << std::endl;
-  std::cout << "Final " << tensor_name << " norm: " << norm_after << std::endl
-            << std::endl;
+    // Accumulate the permuted tensor
+    perm_sum(l_annot) += array(perm_annot);
+
+  } while (std::next_permutation(ket_perm.begin(), ket_perm.end()));
+
+  // Apply the symmetrization factor
+  perm_sum(l_annot) = perm_sum(l_annot) * inv_factor_d;
+
+  // Compute cleaned = array - perm_sum
+  cleaned(l_annot) = array(l_annot) - perm_sum(l_annot);
+
+  // Wait for lazy operations to complete
+  TArray::wait_for_lazy_cleanup(cleaned.world());
 
   return cleaned;
 }
