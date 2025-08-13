@@ -231,7 +231,7 @@ container::svector<ResultExpr> S_maps(
     const container::svector<ResultExpr>& results);
 
 ExprPtr hash_filter_compact_set(
-    const ExprPtr& expr,
+    ExprPtr expr,
     const container::svector<container::svector<Index>>& ext_idxs);
 
 /// @brief Transforms an expression from spin orbital to spatial orbitals
