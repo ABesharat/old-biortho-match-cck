@@ -49,7 +49,7 @@ TArray cleanup_tensor(const TArray& array, const sequant::Tensor& tensor) {
   perm_sum.fill(0.0);
 
   rational norm_factor = rational(1, factorial(ket_rank));
-  double norm_factor_d = static_cast<double>(inv_factor);
+  double norm_factor_d = static_cast<double>(norm_factor);
 
   std::vector<size_t> ket_perm = ket_idx;
   do {
@@ -67,9 +67,9 @@ TArray cleanup_tensor(const TArray& array, const sequant::Tensor& tensor) {
   perm_sum(l_annot) = perm_sum(l_annot) * norm_factor_d;
 
   // cleaned = array - perm_sum
-  cleaned(l_annot) = array(l_annot) - perm_sum(l_annot)
+  cleaned(l_annot) = array(l_annot) - perm_sum(l_annot);
 
-                                          return cleaned;
+  return cleaned;
 }
 
 }  // namespace sequant
