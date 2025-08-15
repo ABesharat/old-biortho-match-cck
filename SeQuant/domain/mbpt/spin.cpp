@@ -1184,43 +1184,50 @@ ExprPtr closed_shell_CC_spintrace_compact_set(ExprPtr const& expr) {
   using ranges::views::transform;
 
   auto const ext_idxs = external_indices(expr);
-  auto st_expr = closed_shell_spintrace(expr, ext_idxs, false);
-  st_expr = S_maps(st_expr);
+  auto st_expr = closed_shell_spintrace(expr, ext_idxs);
   canonicalize(st_expr);
 
   if (!ext_idxs.empty()) {
+    // Remove S operator to apply biorthogonal transformation
+    for (auto& term : *st_expr) {
+      if (term->is<Product>()) term = remove_tensor(term->as<Product>(), L"S");
+    }
     st_expr = biorthogonal_transform(st_expr, ext_idxs);
-  }
 
-  // apply hash filtering to get unique set of terms (including all large
-  // coefficients of each unique term)
-  st_expr = hash_filter_compact_set(st_expr, ext_idxs);
-
-  auto bixs = ext_idxs | transform([](auto&& vec) { return vec[1]; });
-  auto kixs = ext_idxs | transform([](auto&& vec) { return vec[0]; });
-  if (!bixs.empty() || !kixs.empty()) {
+    auto bixs = ext_idxs | transform([](auto&& vec) { return vec[1]; });
+    auto kixs = ext_idxs | transform([](auto&& vec) { return vec[0]; });
     st_expr =
         ex<Tensor>(Tensor{L"S", bra(std::move(bixs)), ket(std::move(kixs))}) *
         st_expr;
-  }
 
-  // apply combined normalization and rescaling factor
-  rational combined_factor;
-  if (ext_idxs.size() <= 2) {
-    combined_factor = rational(1, factorial(ext_idxs.size()));
-  } else {
-    combined_factor = rational(
-        1, factorial(ext_idxs.size()) - 1);  // (1/fact_n) * (fact_n/(fact_n-1))
+    simplify(st_expr);
+    // now fully expand them. this avoids the expensive spintracing and also
+    // biorthogonalization of all the raw terms
+    st_expr = S_maps(st_expr);
+    // canonicalize(st_expr);
+
+    // apply hash filter method to get unique set of terms
+    st_expr = hash_filter_compact_set(st_expr, ext_idxs);
+    // add S tensor again
+    st_expr =
+        ex<Tensor>(Tensor{L"S", bra(std::move(bixs)), ket(std::move(kixs))}) *
+        st_expr;
+
+    rational combined_factor;
+    if (ext_idxs.size() <= 2) {
+      combined_factor = rational(1, factorial(ext_idxs.size()));
+    } else {
+      auto fact_n = factorial(ext_idxs.size());
+      combined_factor =
+          rational(1, fact_n - 1);  // this is (1/fact_n) * (fact_n/(fact_n-1))
+    }
+    st_expr = ex<Constant>(combined_factor) * st_expr;
   }
-  st_expr = ex<Constant>(combined_factor) * st_expr;
 
   simplify(st_expr);
-  // std::wcout << "final eqns after symm: "
-  //            << sequant::to_latex_align(
-  //                   sequant::ex<sequant::Sum>(
-  //                       sequant::opt::reorder(st_expr->as<sequant::Sum>())),
-  //                   0, 4)
-  //            << std::endl;
+  // std::wcout << "final eqns after symm: " <<
+  // sequant::to_latex_align(sequant::ex<sequant::Sum>(sequant::opt::reorder(result_expr->as<sequant::Sum>())),
+  // 0, 4) << std::endl;
 
   return st_expr;
 }
