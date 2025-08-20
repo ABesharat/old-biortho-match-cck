@@ -1205,9 +1205,11 @@ ExprPtr closed_shell_CC_spintrace_compact_set(ExprPtr const& expr) {
     // now fully expand them. this avoids the expensive spintracing and also
     // biorthogonalization of all the raw terms
     st_expr = S_maps(st_expr);
-    // canonicalize(st_expr);
+    // canonicalizer must be called before hash-filter
+    canonicalize(st_expr);
 
-    // apply hash filter method to get unique set of terms
+    // apply hash filter method to get the unique set of terms (all the largest
+    // coefficients in each set of permutation related terms)
     st_expr = hash_filter_compact_set(st_expr, ext_idxs);
     // add S tensor again
     st_expr =
@@ -1227,7 +1229,7 @@ ExprPtr closed_shell_CC_spintrace_compact_set(ExprPtr const& expr) {
 
   simplify(st_expr);
   // std::wcout << "final eqns after symm: " <<
-  // sequant::to_latex_align(sequant::ex<sequant::Sum>(sequant::opt::reorder(result_expr->as<sequant::Sum>())),
+  // sequant::to_latex_align(sequant::ex<sequant::Sum>(sequant::opt::reorder(st_expr->as<sequant::Sum>())),
   // 0, 4) << std::endl;
 
   return st_expr;
