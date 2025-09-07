@@ -1185,6 +1185,8 @@ ExprPtr closed_shell_CC_spintrace_compact_set(ExprPtr const& expr) {
 
   auto const ext_idxs = external_indices(expr);
   auto st_expr = closed_shell_spintrace(expr, ext_idxs);
+  std::wcout << "number of terms after spintracing: " << st_expr.size()
+             << std::endl;
   canonicalize(st_expr);
 
   if (!ext_idxs.empty()) {
@@ -1193,6 +1195,8 @@ ExprPtr closed_shell_CC_spintrace_compact_set(ExprPtr const& expr) {
       if (term->is<Product>()) term = remove_tensor(term->as<Product>(), L"S");
     }
     st_expr = biorthogonal_transform(st_expr, ext_idxs);
+    std::wcout << "number of terms after biortho: " << st_expr.size()
+               << std::endl;
 
     auto bixs = ext_idxs | transform([](auto&& vec) { return vec[1]; });
     auto kixs = ext_idxs | transform([](auto&& vec) { return vec[0]; });
@@ -1202,11 +1206,17 @@ ExprPtr closed_shell_CC_spintrace_compact_set(ExprPtr const& expr) {
           st_expr;
     }
     simplify(st_expr);
+    std::wcout << "number of terms after biortho+simplify: " << st_expr.size()
+               << std::endl;
     // now fully expand them. this avoids the expensive spintracing and also
     // biorthogonalization of all the raw terms
     st_expr = S_maps(st_expr);
+    std::wcout << "number of terms after expansion: " << st_expr.size()
+               << std::endl;
     // canonicalizer must be called before hash-filter
     canonicalize(st_expr);
+    std::wcout << "number of terms after canon: " << st_expr.size()
+               << std::endl;
 
     // apply hash filter method to get the unique set of terms (all the largest
     // coefficients in each set of permutation related terms)
