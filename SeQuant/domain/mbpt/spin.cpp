@@ -1211,6 +1211,16 @@ ExprPtr closed_shell_CC_spintrace_compact_set(ExprPtr const& expr) {
     // apply hash filter method to get the unique set of terms (all the largest
     // coefficients in each set of permutation related terms)
     st_expr = hash_filter_compact_set(st_expr, ext_idxs);
+
+    std::wcout << "number of terms before symm: " << st_expr.size()
+               << std::endl;
+    std::wcout << "final eqns before symm: "
+               << sequant::to_latex_align(
+                      sequant::ex<sequant::Sum>(
+                          sequant::opt::reorder(st_expr->as<sequant::Sum>())),
+                      0, 4)
+               << std::endl;
+
     // add S tensor again
     st_expr =
         ex<Tensor>(Tensor{L"S", bra(std::move(bixs)), ket(std::move(kixs))}) *
